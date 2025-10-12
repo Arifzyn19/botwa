@@ -1,16 +1,10 @@
 {
   "name": "botwa",
-  "main": "dist/index.js",
+  "main": "index.js",
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && tsx index.ts"
-  },
-  "devDependencies": {
-    "@types/node": "^24.7.2",
-    "tsx": "^4.19.1",
-    "typescript": "^5.9.3"
+    "start": "node index.js"
   },
   "dependencies": {
     "@cacheable/node-cache": "^1.7.3",

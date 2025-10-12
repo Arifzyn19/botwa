@@ -1,4 +1,4 @@
-import cmd, {} from "../commands/map.js";
+import cmd from "../commands/map.js";
 cmd.add({
     name: "menu",
     alias: ["help", "list"],

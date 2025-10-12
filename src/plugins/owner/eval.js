@@ -1,4 +1,4 @@
-import cmd, {} from "../../commands/map.js";
+import cmd from "../../commands/map.js";
 import { spawn } from "child_process";
 import util from "util";
 cmd.add({
@@ -8,10 +8,14 @@ cmd.add({
     desc: "Execute shell command (owner only)",
     isOwner: true,
     async run({ m, args }) {
-        const command = args.join(" ").trim();
+        const command = (args || []).join(" ").trim();
         if (!command)
             return m.reply("Masukkan command untuk dijalankan.");
-        const [cmdName, ...cmdArgs] = command.split(" ");
+        const commandParts = command.split(" ");
+        const cmdName = commandParts[0];
+        const cmdArgs = commandParts.slice(1);
+        if (!cmdName)
+            return m.reply("Invalid command.");
         const execProcess = spawn(cmdName, cmdArgs, {
             cwd: process.cwd(),
             shell: false,
@@ -45,7 +49,7 @@ cmd.add({
         });
         execProcess.on("error", (err) => {
             clearTimeout(timeout);
-            m.reply("Error menjalankan command:\n```" + err.message + "```");
+            m.reply("Error menjalankan command:\\n```" + err.message + "```");
         });
     },
 });

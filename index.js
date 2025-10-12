@@ -1,9 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config();
-import { Boom } from "@hapi/boom";
 import NodeCache from "@cacheable/node-cache";
 import * as readline from "readline";
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from "baileys";
+import { DisconnectReason, jidNormalizedUser, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, makeCacheableSignalKeyStore, proto, useMultiFileAuthState, } from "baileys";
+import makeWASocket from './src/utils/socket.js';
 import * as P from "pino";
 import { procMsg } from "./src/utils/msg.js";
 import { prMsg } from "./src/utils/fmt.js";
@@ -16,7 +16,7 @@ catch (error) {
     console.error("Error loading or watching commands:", error);
 }
 import handler from "./src/commands/handler.js";
-const localStore = {
+const LocalStore = {
     messages: {},
     groupMetadata: {},
     contacts: {}
@@ -42,10 +42,16 @@ const question = (text) => new Promise((resolve, reject) => {
     }
 });
 const startWhatsApp = async () => {
+    async function getMessage(key) {
+        if (!key.remoteJid || !key.id)
+            return undefined;
+        return proto.Message.fromObject({ conversation: "test" });
+    }
     const { state, saveCreds } = await useMultiFileAuthState("baileys_auth_info");
     const { version, isLatest } = await fetchLatestBaileysVersion();
     console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
-    const whatsapp = makeWASocket({
+    const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
+    const config = {
         version,
         printQRInTerminal: false,
         logger,
@@ -56,7 +62,9 @@ const startWhatsApp = async () => {
         msgRetryCounterCache,
         generateHighQualityLinkPreview: true,
         getMessage,
-    });
+        cachedGroupMetadata: async (jid) => Promise.resolve(groupCache.get(jid)),
+    };
+    const whatsapp = await makeWASocket(config);
     if (!whatsapp.authState.creds.registered) {
         try {
             const phoneNumber = await question("Please enter your phone number:\n");
@@ -104,23 +112,48 @@ const startWhatsApp = async () => {
         }
         if (events["messages.upsert"]) {
             const upsert = events["messages.upsert"];
-            if (localStore.groupMetadata && Object.keys(localStore.groupMetadata).length < 1)
-                localStore.groupMetadata = await whatsapp.groupFetchAllParticipating();
+            if (LocalStore.groupMetadata && Object.keys(LocalStore.groupMetadata).length < 1)
+                LocalStore.groupMetadata = await whatsapp.groupFetchAllParticipating();
             if (!!upsert.requestId) {
                 console.log("placeholder message received for request of id=" + upsert.requestId, upsert);
             }
             for (let msg of upsert.messages) {
                 const jid = msg.key.participant ?? msg.key.remoteJid;
                 if (jid) {
-                    if (!localStore.messages[jid])
-                        localStore.messages[jid] = [msg];
-                    localStore.messages[jid].push(msg);
+                    if (jid && !LocalStore.messages[jid])
+                        LocalStore.messages[jid] = [msg];
+                    LocalStore.messages[jid].push(msg);
                 }
                 if (upsert.type == "notify") {
-                    const processedMessage = await procMsg(msg, whatsapp, localStore);
+                    const processedMessage = await procMsg(msg, whatsapp, LocalStore);
                     if (!processedMessage)
                         return;
-                    await handler.handleCommand(processedMessage, whatsapp, localStore);
+                    const oldSock = whatsapp;
+                    if (processedMessage.isGroup) {
+                        const store = processedMessage?.metadata;
+                        if (store) {
+                            const metadata = await whatsapp.groupMetadata(processedMessage.chat);
+                            if (typeof store.ephemeralDuration === "undefined")
+                                store.ephemeralDuration = 0;
+                            if (store.ephemeralDuration && store.ephemeralDuration !== metadata?.ephemeralDuration) {
+                                console.log(`ephemeralDuration for ${processedMessage.chat} has changed!\nupdate groupMetadata...`);
+                                if (processedMessage)
+                                    processedMessage.metadata = metadata;
+                                console.log(processedMessage.metadata?.ephemeralDuration);
+                                groupCache.set(processedMessage.chat, metadata);
+                            }
+                        }
+                    }
+                    const originalSendMessage = whatsapp.sendMessage.bind(whatsapp);
+                    whatsapp.sendMessage = async (jid, content, options = {}) => {
+                        return originalSendMessage(jid, content, {
+                            ...options,
+                            ephemeralExpiration: processedMessage.isGroup
+                                ? (processedMessage.metadata && processedMessage.metadata.ephemeralDuration) || null
+                                : (processedMessage.message[processedMessage.type]?.contextInfo?.expiration) || null,
+                        });
+                    };
+                    await handler.handleCommand(processedMessage, whatsapp, LocalStore);
                     prMsg(processedMessage);
                 }
             }
@@ -138,6 +171,14 @@ const startWhatsApp = async () => {
                 }
             }
         }
+        if (events["contacts.upsert"]) {
+            const update = events["contacts.upsert"];
+            for (let contact of update) {
+                let id = jidNormalizedUser(contact.id);
+                if (LocalStore && LocalStore.contacts)
+                    LocalStore.contacts[id] = { ...(contact || {}), isContact: true };
+            }
+        }
         if (events["contacts.update"]) {
             for (const contact of events["contacts.update"]) {
                 if (typeof contact.imgUrl !== "undefined") {
@@ -146,20 +187,89 @@ const startWhatsApp = async () => {
                         : await whatsapp.profilePictureUrl(contact.id).catch(() => null);
                     console.log(`contact ${contact.id} has a new profile pic: ${newUrl}`);
                 }
+                let id = jidNormalizedUser(contact.id);
+                if (LocalStore && LocalStore.contacts)
+                    LocalStore.contacts[id] = {
+                        ...(LocalStore.contacts?.[id] || {}),
+                        ...(contact || {}),
+                    };
+            }
+        }
+        if (events["groups.upsert"]) {
+            const newGroups = events["groups.upsert"];
+            for (const groupMetadata of newGroups) {
+                try {
+                    groupCache.set(groupMetadata.id, groupMetadata);
+                    LocalStore.groupMetadata[groupMetadata.id] = groupMetadata;
+                }
+                catch (error) {
+                    console.error(`[GROUPS.UPSERT] Error adding group ${groupMetadata.id}:`, error);
+                }
+            }
+        }
+        if (events["groups.update"]) {
+            const updates = events["groups.update"];
+            for (const update of updates) {
+                const id = update.id;
+                if (!id)
+                    continue;
+                try {
+                    const metadata = await whatsapp.groupMetadata(id);
+                    groupCache.set(id, metadata);
+                    if (LocalStore.groupMetadata[id]) {
+                        LocalStore.groupMetadata[id] = {
+                            ...(LocalStore.groupMetadata[id] || {}),
+                            ...metadata,
+                        };
+                    }
+                    else {
+                        LocalStore.groupMetadata[id] = metadata;
+                    }
+                }
+                catch (error) {
+                    console.error(`[GROUPS.UPDATE] Error updating group ${id}:`, error);
+                }
             }
         }
         if (events["group-participants.update"]) {
-            const { id, participants } = events["group-participants.update"];
-            for (const participant of participants) {
+            const { id, participants, action } = events["group-participants.update"];
+            if (id) {
                 try {
-                    const welcomeMessage = `Hello @${participant.split('@')[0]}! Welcome to the group! 🎉\n\nPlease read the group description and follow the rules.`;
-                    await whatsapp.sendMessage(id, {
-                        text: welcomeMessage,
-                        mentions: [participant]
-                    });
+                    const metadata = await whatsapp.groupMetadata(id);
+                    groupCache.set(id, metadata);
+                    LocalStore.groupMetadata[id] = metadata;
+                    if (LocalStore.groupMetadata[id] && LocalStore.groupMetadata[id].participants) {
+                        switch (action) {
+                            case "add":
+                                LocalStore.groupMetadata[id].participants.push(...participants.map((jid) => ({
+                                    id: jidNormalizedUser(jid),
+                                    admin: null,
+                                })));
+                                break;
+                            case "demote":
+                                for (const participant of LocalStore.groupMetadata[id].participants) {
+                                    let participantId = jidNormalizedUser(participant.id);
+                                    if (participants.includes(participantId)) {
+                                        participant.admin = null;
+                                    }
+                                }
+                                break;
+                            case "promote":
+                                for (const participant of LocalStore.groupMetadata[id].participants) {
+                                    let participantId = jidNormalizedUser(participant.id);
+                                    if (participants.includes(participantId)) {
+                                        participant.admin = "admin";
+                                    }
+                                }
+                                break;
+                            case "remove":
+                                LocalStore.groupMetadata[id].participants = LocalStore.groupMetadata[id].participants.filter((p) => !participants.includes(jidNormalizedUser(p.id)));
+                                break;
+                        }
+                    }
                 }
-                catch (e) {
-                    console.error("Error sending welcome message:", e);
+                catch (error) {
+                    console.error(`[GROUP-PARTICIPANTS.UPDATE] Error processing group ${id}:`, error);
                 }
             }
         }
@@ -168,8 +278,5 @@ const startWhatsApp = async () => {
         }
     });
     return whatsapp;
-    async function getMessage() {
-        return proto.Message.create({ conversation: "test" });
-    }
 };
 startWhatsApp();

@@ -81,7 +81,7 @@ const getDeviceType = (id) => {
 const procMsg = async (originalMessage, socket, dStore) => {
     const message = filterMsgs(originalMessage);
     const { key, message: rawMessage } = message || originalMessage;
-    console.log(key);
+    console.log(originalMessage);
     if (!rawMessage) {
         return {
             key: { id: "", remoteJid: "", fromMe: false },
@@ -113,7 +113,7 @@ const procMsg = async (originalMessage, socket, dStore) => {
     }
     const id = key?.id || "";
     const chatJid = key?.remoteJid || "";
-    const fromMe = key?.fromMe || false;
+    const Me = key?.fromMe || false;
     const isGroup = isJidGroup(chatJid) || chatJid?.endsWith("@g.us");
     const timestamp = message.messageTimestamp;
     const rawPushName = message.pushName;
@@ -195,7 +195,8 @@ const procMsg = async (originalMessage, socket, dStore) => {
         }
     }
     const device = id ? getDeviceType(id) : "unknown";
-    const isBot = fromMe;
+    const isFromMe = key?.fromMe || false;
+    const isBot = isFromMe;
     const normalizedTimestamp = timestamp
         ? typeof timestamp === "number"
             ? timestamp
@@ -205,7 +206,7 @@ const procMsg = async (originalMessage, socket, dStore) => {
         key: key,
         id,
         chat: chatJid,
-        fromMe,
+        fromMe: isFromMe,
         isGroup,
         sender,
         senderName: pushName,
@@ -234,15 +235,6 @@ const procMsg = async (originalMessage, socket, dStore) => {
         device,
         isBot,
         reply: async (_text) => {
-            let sock = socket.sendMessage;
-            socket.sendMessage = async (jid, content, options) => {
-                return sock(jid, content, {
-                    ...options,
-                    ephemeralExpiration: isGroup
-                        ? metadata?.ephemeralDuration
-                        : message[type]?.contextInfo?.expiration,
-                });
-            };
             return await socket.sendMessage(chatJid, { text: _text }, {
                 quoted: message,
             });

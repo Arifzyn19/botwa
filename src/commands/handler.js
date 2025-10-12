@@ -1,4 +1,4 @@
-import cmd, {} from "./map.js";
+import cmd from "./map.js";
 class CommandHandler {
     async handleCommand(processedMessage, socket, store) {
         if (process.env.isSelf && processedMessage.sender.split("@")[0] !== process.env.OWNER)

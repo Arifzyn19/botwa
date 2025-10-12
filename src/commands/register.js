@@ -3,7 +3,6 @@ import { join, resolve } from "path";
 import cmd from "./map.js";
 import chokidar from "chokidar";
 class CmdRegis {
-    directory;
     constructor(dir) {
         this.directory = resolve(dir);
     }

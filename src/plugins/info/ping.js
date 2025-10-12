@@ -1,4 +1,4 @@
-import cmd, {} from "../../commands/map.js";
+import cmd from "../../commands/map.js";
 import os from "os";
 import { performance } from "perf_hooks";
 cmd.add({

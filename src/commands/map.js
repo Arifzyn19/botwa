@@ -1,5 +1,7 @@
 class CmdMap {
-    commands = [];
+    constructor() {
+        this.commands = [];
+    }
     values() {
         return this.commands;
     }

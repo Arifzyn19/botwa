@@ -1,9 +1,8 @@
-import cmd, {} from "../../commands/map.js";
+import cmd from "../../commands/map.js";
 import { join, resolve, dirname } from "path";
 import { readFile, writeFile, readdir, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import { spawn } from "child_process";
-import util from "util";
 const PLUGINS_DIR = resolve("./src/plugins/");
 const DIST_DIR = resolve("./dist/plugins/");
 cmd.add({
@@ -59,9 +58,6 @@ cmd.add({
             const code = m?.quoted ? m?.quoted?.text?.trim() : '';
             if (!m.quoted && !code)
                 return m.reply("Reply code to save");
-            if (!typedFileName.endsWith('.ts') || !typedFileName.endsWith('.js')) {
-                return m.reply("File must have .ts/.js extension");
-            }
             if (typedFileName.includes('..')) {
                 return m.reply("Invalid path. '..' is not allowed.");
             }
@@ -112,9 +108,6 @@ cmd.add({
                 return m.reply("File name is required for --delete command");
             }
             let typedFileName = fileName;
-            if (!typedFileName.endsWith('.ts') && !typedFileName.endsWith(".js")) {
-                return m.reply("File must have .ts/.js extension");
-            }
             if (typedFileName.includes('..')) {
                 return m.reply("Invalid path. '..' is not allowed.");
             }

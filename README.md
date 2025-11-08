@@ -34,6 +34,7 @@
 ## 🚀 Installation
 
 1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    cd botwa
@@ -58,12 +59,15 @@
 ## 🎯 Usage
 
 ### For Development:
+
 ```bash
 npm run dev
 ```
 
 ### For Production:
+
 Start the bot:
+
 ```bash
 npm start
 ```
@@ -106,7 +110,7 @@ The bot supports a plugin system for adding custom commands:
      desc: "Sends a greeting message",
      async run({ m }) {
        m.reply("Hello! How are you?");
-     }
+     },
    });
    ```
 
@@ -116,6 +120,7 @@ The bot supports a plugin system for adding custom commands:
 
 The bot also supports middleware functionality that allows you to execute code for every message received, regardless of whether it's a command or not. This is particularly useful for:
 /
+
 - Auto-replying to specific keywords or phrases
 - Logging all messages
 - Tracking user activity
@@ -133,15 +138,15 @@ To use middleware functionality:
      middleware: async ({ m, sock }) => {
        // This function runs for every received message
        const messageText = m.body.toLowerCase();
-       
+
        // Example: Auto-reply to messages containing "hello"
        if (messageText.includes("hello")) {
          m.reply("Hi there! I received your message.");
        }
-       
+
        // Example: Log all messages to console
        console.log(`Received message: ${m.body} from ${m.sender}`);
-     }
+     },
    });
    ```
 
@@ -198,11 +203,13 @@ To contribute or modify the bot:
 ## 🏗️ Running the Bot
 
 The bot is already in JavaScript format and ready to run:
+
 ```bash
 npm start
 ```
 
 For development mode with auto-reload:
+
 ```bash
 npm run dev
 ```

@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@cacheable/node-cache": "^1.7.3",
+    "@libsql/client": "^0.15.15",
     "baileys": "^6.7.20",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.3",
